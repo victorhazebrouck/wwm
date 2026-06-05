@@ -1,0 +1,48 @@
+{
+  "$schema": "https://cmake.org/cmake/help/latest/_downloads/3e2d73bff478d88a7de0de736ba5e361/schema.json",
+  "version": 10,
+  "cmakeMinimumRequired": { "major": 4, "minor": 0, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "_msvc",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build",
+      "generator": "Ninja Multi-Config",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_C_CLANG_TIDY": "clang-tidy"
+      }
+    },
+    {
+      "name": "msvc-debug",
+      "inherits": ["_msvc"],
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "/W4 /WX-",
+        "CMAKE_C_FLAGS_DEBUG": "/RTC1 /Zi"
+      }
+    },
+    {
+      "name": "msvc-release",
+      "inherits": ["_msvc"],
+      "cacheVariables": {
+        "CMAKE_C_FLAGS_RELEASE": "/O2"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc-release",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [],
+  "packagePresets": [],
+  "workflowPresets": []
+}
