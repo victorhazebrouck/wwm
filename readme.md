@@ -65,13 +65,15 @@ cl src\wwm.c /O2
 
 #### Adding Custom Actions:
 
-It is very easy to add custom actions to your installation.
-
 ```c
 // every action is defined as follows:
 typedef void (*WWMAction)();
 void WWMAction_Undefinded();
 void WWMAction_GoToWorkspace1();
 
-// every action is bound as follows:
+// just implement the WWMAction interface and bind it to a shortcut
+void WWMActionCustom_HelloWorld()
+{
+    printf("Hello world!");
+}
 ```
