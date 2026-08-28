@@ -74,6 +74,6 @@ void WWMAction_GoToWorkspace1();
 // just implement the WWMAction interface and bind it to a shortcut
 void WWMActionCustom_HelloWorld()
 {
-    printf("Hello world!");
+    printf("Hello world!\n");
 }
 ```
