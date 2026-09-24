@@ -175,9 +175,6 @@ typedef struct WWMKeyAction {
 typedef struct WWMConfig {
     WWMKeyCode mod1_key;
     WWMKeyCode mod2_key;
-    const WWMKeyRemap *key_remaps;
-    const WWMKeyAction *key_primary_actions;
-    const WWMKeyAction *key_secondary_actions;
 } WWMConfig;
 
 //
@@ -224,10 +221,11 @@ static const WWMKeyAction KEY_SECONDARY_ACTIONS[] = {
     {.key = WWMKeyCode_Q, .action = WWMAction_FocusedWinDestroy},
 };
 static const WWMConfig CONFIG = {
-    .mod1_key =
-        WWMKeyCode_CAPSLOCK, // If pressed alone will dispatch next key to KEY_PRIMARY_ACTIONS
-    .mod2_key =
-        WWMKeyCode_LSHIFT, // If pressed with mod1 will dispatch next key to KEY_SECONDARY_ACTIONS
+    // If pressed alone will dispatch next key to KEY_PRIMARY_ACTIONS
+    .mod1_key = WWMKeyCode_CAPSLOCK,
+
+    // If pressed with mod1 will dispatch next key to KEY_SECONDARY_ACTIONS
+    .mod2_key = WWMKeyCode_LSHIFT,
 };
 
 //
@@ -256,23 +254,23 @@ typedef enum WWMKeyState {
 static WWMBool IS_MOD1_PRESSED = WWMBool_False;
 static WWMBool IS_MOD2_PRESSED = WWMBool_False;
 
-void wwm_kb_map_keycode_to_action_call(WWMBool is_mod2_pressed, WWMKeyCode key_code)
+void wwm_kb_map_keycode_to_primary_action(WWMKeyCode key_code)
 {
-    if (is_mod2_pressed == WWMBool_True) {
-        const size_t size = sizeof(KEY_SECONDARY_ACTIONS) / sizeof(WWMKeyAction);
-        for (size_t i = 0; i < size; ++i) {
-            if (KEY_SECONDARY_ACTIONS[i].key == key_code) {
-                KEY_SECONDARY_ACTIONS[i].action();
-                return;
-            }
+    const size_t size = sizeof(KEY_PRIMARY_ACTIONS) / sizeof(WWMKeyAction);
+    for (size_t i = 0; i < size; ++i) {
+        if (KEY_PRIMARY_ACTIONS[i].key == key_code) {
+            KEY_PRIMARY_ACTIONS[i].action();
+            return;
         }
-    } else {
-        const size_t size = sizeof(KEY_PRIMARY_ACTIONS) / sizeof(WWMKeyAction);
-        for (size_t i = 0; i < size; ++i) {
-            if (KEY_PRIMARY_ACTIONS[i].key == key_code) {
-                KEY_PRIMARY_ACTIONS[i].action();
-                return;
-            }
+    }
+}
+void wwm_kb_map_keycode_to_secondary_action(WWMKeyCode key_code)
+{
+    const size_t size = sizeof(KEY_SECONDARY_ACTIONS) / sizeof(WWMKeyAction);
+    for (size_t i = 0; i < size; ++i) {
+        if (KEY_SECONDARY_ACTIONS[i].key == key_code) {
+            KEY_SECONDARY_ACTIONS[i].action();
+            return;
         }
     }
 }
@@ -283,7 +281,11 @@ WWMPropagateEvent wwm_kb_handle_keydown(WWMKeyCode key_code)
     if (IS_MOD1_PRESSED == WWMBool_False) {
         return WWMPropagateEvent_Continue;
     }
-    wwm_kb_map_keycode_to_action_call(IS_MOD2_PRESSED, key_code);
+    if (IS_MOD2_PRESSED) {
+        wwm_kb_map_keycode_to_secondary_action(key_code);
+    } else {
+        wwm_kb_map_keycode_to_primary_action(key_code);
+    }
     return WWMPropagateEvent_Stop;
 }
 WWMPropagateEvent wwm_kb_handle_keyup(WWMKeyCode key_code)
@@ -416,9 +418,11 @@ void wwm_hwnd_minimize(HWND hwnd)
 }
 void wwm_hwnd_make_windowed(HWND hwnd)
 {
-    // @TODO: need to do it twice for it to work reliably wtf ?
-    ShowWindow(hwnd, SW_RESTORE);
-    ShowWindow(hwnd, SW_RESTORE);
+    if (IsIconic(hwnd)) {
+        ShowWindow(hwnd, SW_RESTORE);
+    } else {
+        ShowWindow(hwnd, SW_SHOW);
+    }
 }
 typedef struct WWMHwndSetPosParams {
     HWND hwnd;
@@ -427,11 +431,13 @@ typedef struct WWMHwndSetPosParams {
 } WWMHwndSetPosParams;
 void wwm_hwnd_set_pos(WWMHwndSetPosParams params)
 {
-    RECT win_rect;
+    wwm_hwnd_make_windowed(params.hwnd);
+
+    RECT win_rect = {0};
     GetWindowRect(params.hwnd, &win_rect);
-    RECT client_rect;
+    RECT client_rect = {0};
     GetClientRect(params.hwnd, &client_rect);
-    POINT client_origin = {0, 0};
+    POINT client_origin = {0};
     ClientToScreen(params.hwnd, &client_origin);
 
     const int offset_x = client_origin.x - win_rect.left;
@@ -439,8 +445,10 @@ void wwm_hwnd_set_pos(WWMHwndSetPosParams params)
 
     const int window_width = win_rect.right - win_rect.left;
     const int window_height = win_rect.bottom - win_rect.top;
+
     const int client_width = client_rect.right - client_rect.left;
     const int client_height = client_rect.bottom - client_rect.top;
+
     const int extra_width = window_width - client_width;
     const int extra_height = window_height - client_height;
 
@@ -449,15 +457,22 @@ void wwm_hwnd_set_pos(WWMHwndSetPosParams params)
     const int new_window_width = params.width + extra_width;
     const int new_window_height = params.height + extra_height;
 
-    wwm_hwnd_make_windowed(params.hwnd);
     SetWindowPos(
         /*hWnd=*/params.hwnd,
-        /*hWndInsertAfter=*/HWND_TOP,
-        /*X=*/new_window_x,
-        /*Y=*/new_window_y,
+        /*hWndInsertAfter=*/NULL,
+        /*X=*/0,
+        /*Y=*/0,
         /*cx=*/new_window_width,
         /*cy=*/new_window_height,
-        /*uFlags=*/SWP_NOZORDER);
+        /*uFlags=*/SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(
+        /*hWnd=*/params.hwnd,
+        /*hWndInsertAfter=*/NULL,
+        /*X=*/new_window_x,
+        /*Y=*/new_window_y,
+        /*cx=*/0,
+        /*cy=*/0,
+        /*uFlags=*/SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 void wwm_hwnd_maximize(HWND hwnd)
 {
@@ -503,9 +518,9 @@ void wwm_hwnd_make_vertical_section(HWND hwnd, uint16_t index, int nb_windows)
 #define WWM_WINDOWS_ARRAY_CAPACITY 100
 
 typedef enum WWMPresentationMode {
-    WWMPresentationMode_Tabbed = 0,
-    WWMPresentationMode_Horizontal,
+    WWMPresentationMode_Horizontal = 0,
     WWMPresentationMode_Vertical,
+    WWMPresentationMode_Tabbed,
 } WWMPresentationMode;
 
 typedef struct WWMWorkspace {
@@ -635,7 +650,6 @@ void wwm_workspace_minimize_windows(WWMWorkspace *workspace)
 }
 void wwm_workspace_update_windows_positions(WWMWorkspace *workspace)
 {
-
     if (wwm_workspace_is_empty(workspace)) {
         return;
     }
@@ -740,66 +754,6 @@ void wwm_state_move_window_focused_to_workspace_i(uint16_t index)
     wwm_workspace_add_window(new_workspace, hwnd);
     wwm_hwnd_minimize(hwnd);
     wwm_workspace_update_windows_positions(workspace_focused);
-}
-
-//
-// Impl Windows Procedures
-//
-
-BOOL CALLBACK wwm_window_enum_proc(HWND hwnd, LPARAM user_data)
-{
-    (void)user_data;
-
-    if (wwm_hwnd_is_real(hwnd)) {
-        wwm_state_add_window_to_workspace_focused(hwnd);
-    }
-    return TRUE;
-}
-VOID CALLBACK wwm_window_created_proc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
-                                      LONG idObject, LONG idChild, DWORD idEventThread,
-                                      DWORD dwmsEventTime)
-{
-    (void)hWinEventHook;
-    (void)event;
-    (void)idObject;
-    (void)idChild;
-    (void)idEventThread;
-    (void)dwmsEventTime;
-
-    if (wwm_hwnd_is_real(hwnd)) {
-        wwm_state_add_window_to_workspace_focused(hwnd);
-    }
-}
-VOID CALLBACK wwm_window_destroyed_proc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
-                                        LONG idObject, LONG idChild, DWORD idEventThread,
-                                        DWORD dwmsEventTime)
-{
-    (void)hWinEventHook;
-    (void)event;
-    (void)idObject;
-    (void)idChild;
-    (void)idEventThread;
-    (void)dwmsEventTime;
-
-    wwm_state_remove_window(hwnd);
-    wwm_workspace_update_windows_positions(wwm_state_get_workspace_focused());
-}
-VOID CALLBACK wwm_window_focused_proc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
-                                      LONG idObject, LONG idChild, DWORD idEventThread,
-                                      DWORD dwmsEventTime)
-{
-    (void)hWinEventHook;
-    (void)event;
-    (void)hwnd;
-    (void)idObject;
-    (void)idChild;
-    (void)idEventThread;
-    (void)dwmsEventTime;
-
-    // @TODO:
-    // when existing window focused via external mediums,
-    // like alt-tab, notifications, etc...,
-    // set it's workspace and window as current in WM_STATE
 }
 
 //
@@ -982,8 +936,141 @@ void WWMAction_FocusedWinDestroy()
     }
 }
 
-int main()
+//
+// Impl Windows Procedures
+//
+
+BOOL CALLBACK wwm_window_enum_proc(HWND hwnd, LPARAM user_data)
 {
+    (void)user_data;
+
+    if (wwm_hwnd_is_real(hwnd)) {
+        wwm_state_add_window_to_workspace_focused(hwnd);
+    }
+    return TRUE;
+}
+VOID CALLBACK wwm_window_created_proc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
+                                      LONG idObject, LONG idChild, DWORD idEventThread,
+                                      DWORD dwmsEventTime)
+{
+    (void)hWinEventHook;
+    (void)event;
+    (void)idObject;
+    (void)idChild;
+    (void)idEventThread;
+    (void)dwmsEventTime;
+
+    if (wwm_hwnd_is_real(hwnd)) {
+        wwm_state_add_window_to_workspace_focused(hwnd);
+    }
+}
+VOID CALLBACK wwm_window_destroyed_proc(HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd,
+                                        LONG idObject, LONG idChild, DWORD idEventThread,
+                                        DWORD dwmsEventTime)
+{
+    (void)hWinEventHook;
+    (void)event;
+    (void)idObject;
+    (void)idChild;
+    (void)idEventThread;
+    (void)dwmsEventTime;
+
+    wwm_state_remove_window(hwnd);
+    wwm_workspace_update_windows_positions(wwm_state_get_workspace_focused());
+}
+
+//
+// Impl System Tray Icon
+//
+
+static const char *WWM_TRAY_CLASSNAME = "WWMTrayWindow";
+#define WWM_MESSAGE_ID_TRAYICON (WM_APP + 1)
+#define WWM_MESSAGE_ID_TRAY_QUIT 1001
+
+LRESULT CALLBACK wwm_tray_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg) {
+    case WWM_MESSAGE_ID_TRAYICON:
+        if (lParam == WM_RBUTTONUP || lParam == WM_LBUTTONUP) {
+            HMENU menu = CreatePopupMenu();
+            AppendMenu(menu, MF_STRING, WWM_MESSAGE_ID_TRAY_QUIT, "Quit");
+            POINT point = {0};
+            GetCursorPos(&point);
+            SetForegroundWindow(hwnd);
+            uint32_t cmd = TrackPopupMenu( //
+                menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y, 0, hwnd, NULL);
+            DestroyMenu(menu);
+            if (cmd == WWM_MESSAGE_ID_TRAY_QUIT) {
+                PostQuitMessage(0);
+            }
+        }
+        return 0;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    default:
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+}
+
+HWND wwm_tray_icon_create(HINSTANCE instance)
+{
+    RegisterClass(&(WNDCLASS){
+        .lpfnWndProc = wwm_tray_wnd_proc,
+        .hInstance = instance,
+        .lpszClassName = WWM_TRAY_CLASSNAME,
+    });
+
+    HWND hwnd = CreateWindowEx( //
+        0, WWM_TRAY_CLASSNAME, "", WS_OVERLAPPED, 0, 0, 0, 0, NULL, NULL, instance, NULL);
+
+    NOTIFYICONDATA nid = {
+        .cbSize = sizeof(nid),
+        .hWnd = hwnd,
+        .uID = 1,
+        .uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
+        .uCallbackMessage = WWM_MESSAGE_ID_TRAYICON,
+        .hIcon = LoadIcon(NULL, IDI_APPLICATION),
+        .szTip = "WWM",
+    };
+    Shell_NotifyIcon(NIM_ADD, &nid);
+    return hwnd;
+}
+
+void wwm_tray_icon_destroy(HWND hwnd)
+{
+    NOTIFYICONDATA nid = {
+        .cbSize = sizeof(nid),
+        .hWnd = hwnd,
+        .uID = 1,
+    };
+    Shell_NotifyIcon(NIM_DELETE, &nid);
+}
+
+void wwm_ensure_single_instance()
+{
+    static HANDLE s_instance_mutex = NULL;
+    s_instance_mutex = CreateMutexA(NULL, TRUE, "WWM:InstaceMutex");
+    if (s_instance_mutex == NULL) {
+        exit(1);
+    }
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(s_instance_mutex);
+        s_instance_mutex = NULL;
+        exit(1);
+    }
+}
+
+// NOLINT(readability-non-const-parameter)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+{
+    (void)hInstance;
+    (void)hPrevInstance;
+    (void)lpCmdLine;
+    (void)nShowCmd;
+
+    wwm_ensure_single_instance();
+
     HHOOK kb_ev_hook = SetWindowsHookEx(
         /*idHook=*/WH_KEYBOARD_LL,
         /*lpfn=*/wwm_kb_event_proc,
@@ -1009,22 +1096,20 @@ int main()
         /*pfnWinEventProc=*/0,
         /*idProcess=*/0,
         /*idThread=*/WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    HWINEVENTHOOK win_focused_hook = SetWinEventHook(
-        /*eventMin=*/EVENT_OBJECT_FOCUS,
-        /*eventMax=*/EVENT_OBJECT_FOCUS,
-        /*hmodWinEventProc=*/NULL,
-        /*pfnWinEventProc=*/wwm_window_focused_proc,
-        /*pfnWinEventProc=*/0,
-        /*idProcess=*/0,
-        /*idThread=*/WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+
+    HWND tray_hwnd = wwm_tray_icon_create(GetModuleHandle(NULL));
 
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
+    while (GetMessage(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
+
+    wwm_tray_icon_destroy(tray_hwnd);
+    DestroyWindow(tray_hwnd);
 
     UnhookWindowsHookEx(kb_ev_hook);
     UnhookWinEvent(win_created_hook);
     UnhookWinEvent(win_destroyed_hook);
-    UnhookWinEvent(win_focused_hook);
     return 0;
 }
