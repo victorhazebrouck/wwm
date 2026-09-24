@@ -5,7 +5,8 @@ Checks: >
   readability-*,
   -readability-magic-numbers,
   -bugprone-easily-swappable-parameters,
-  -performance-no-int-to-ptr
+  -performance-no-int-to-ptr,
+  -readability-non-const-parameter
 
 WarningsAsErrors: ""
 HeaderFilterRegex: ".*"
